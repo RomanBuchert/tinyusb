@@ -207,6 +207,9 @@
 // Puya
 #define OPT_MCU_PY32F0           2700  ///< Puya PY32F0
 
+// Linux Raw Gadget
+#define OPT_MCU_LINUX_RAW_GADGET 3000 ///< Linux Raw Gadget
+
 // Check if configured MCU is one of listed
 // Apply TU_MCU_IS_EQUAL with || as separator to list of input
 #define TU_MCU_IS_EQUAL(_m)  (CFG_TUSB_MCU == (_m))

@@ -716,6 +716,12 @@
   // Possible to share IN/OUT if only one direction is armed at any one time
   #define CFG_TUD_ENDPOINT_ONE_DIRECTION_ONLY 1
 
+//--------------------------------------------------------------------+
+// Linux
+//--------------------------------------------------------------------+
+#elif TU_CHECK_MCU(OPT_MCU_LINUX_RAW_GADGET)
+  #define TUP_DCD_ENDPOINT_MAX 16
+  #define TUP_RHPORT_HIGHSPEED 1
 #endif
 
 // External USB controller
