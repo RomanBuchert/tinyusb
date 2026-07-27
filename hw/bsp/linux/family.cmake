@@ -4,6 +4,8 @@ include(${CMAKE_CURRENT_LIST_DIR}/boards/${BOARD}/board.cmake)
 
 set(FAMILY_MCUS LINUX_RAW_GADGET CACHE INTERNAL "")
 
+option(TINYUSB_RAW_GADGET_TUI "Enable the Linux Raw Gadget ncurses TUI" OFF)
+
 function(family_add_board BOARD_TARGET)
   add_library(${BOARD_TARGET} INTERFACE)
 
@@ -29,6 +31,10 @@ function(family_configure_example TARGET RTOS)
 
   find_package(Threads REQUIRED)
 
+  if (TINYUSB_RAW_GADGET_TUI)
+    find_package(Curses REQUIRED)
+  endif()
+
   family_configure_common(${TARGET} ${RTOS})
   family_add_tinyusb(${TARGET} OPT_MCU_LINUX_RAW_GADGET)
 
@@ -48,4 +54,22 @@ function(family_configure_example TARGET RTOS)
   target_link_libraries(${TARGET} PRIVATE
     Threads::Threads
   )
+
+  if (TINYUSB_RAW_GADGET_TUI)
+    target_sources(${TARGET} PRIVATE
+      ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_tui.c
+    )
+
+    target_compile_definitions(${TARGET} PRIVATE
+      TINYUSB_RAW_GADGET_TUI=1
+    )
+
+    target_include_directories(${TARGET} PRIVATE
+      ${CURSES_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(${TARGET} PRIVATE
+      ${CURSES_LIBRARIES}
+    )
+  endif()
 endfunction()

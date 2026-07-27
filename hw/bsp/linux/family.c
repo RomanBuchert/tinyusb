@@ -25,6 +25,10 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 
+#if defined(TINYUSB_RAW_GADGET_TUI)
+#include "raw_gadget_tui.h"
+#endif
+
 #include <stdio.h>
 #include <time.h>
 
@@ -33,6 +37,11 @@
 //--------------------------------------------------------------------+
 
 void board_init(void) {
+#if defined(TINYUSB_RAW_GADGET_TUI)
+  if (!raw_gadget_tui_init()) {
+    fputs("Failed to initialize the Raw Gadget TUI.\n", stderr);
+  }
+#endif
 }
 
 void board_init_after_tusb(void) {
@@ -41,11 +50,19 @@ void board_init_after_tusb(void) {
 }
 
 void board_led_write(bool state) {
+#if defined(TINYUSB_RAW_GADGET_TUI)
+  raw_gadget_tui_led_write(0u, state);
+#else
   (void) state;
+#endif
 }
 
 uint32_t board_button_read(void) {
+#if defined(TINYUSB_RAW_GADGET_TUI)
+  return raw_gadget_tui_button_read();
+#else
   return 0;
+#endif
 }
 
 int board_uart_read(uint8_t* buf, int len) {
