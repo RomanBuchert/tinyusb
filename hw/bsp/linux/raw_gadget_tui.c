@@ -137,7 +137,7 @@ static raw_gadget_tui_context_t raw_gadget_tui_context = {
    .lifecycle_mutex = PTHREAD_MUTEX_INITIALIZER,
    .condition = PTHREAD_COND_INITIALIZER,
    .io_mutex = PTHREAD_MUTEX_INITIALIZER,
-   .run_requested = ATOMIC_VAR_INIT(false),
+   .run_requested = false,
    .state = RAW_GADGET_TUI_STATE_STOPPED,
 };
 
