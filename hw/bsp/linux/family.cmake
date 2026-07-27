@@ -59,6 +59,9 @@ function(family_configure_example TARGET RTOS)
     target_sources(${TARGET} PRIVATE
       ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_log.c
       ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_tui.c
+      ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_tui_draw.c
+      ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_tui_input.c
+      ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_tui_io.c
     )
 
     target_compile_definitions(${TARGET} PRIVATE

@@ -31,7 +31,13 @@
 extern "C" {
 #endif
 
-#define RAW_GADGET_TUI_IO_COUNT 32u
+#ifndef RAW_GADGET_TUI_IO_COUNT
+#define RAW_GADGET_TUI_IO_COUNT 1u
+#endif
+
+#if (RAW_GADGET_TUI_IO_COUNT < 1u) || (RAW_GADGET_TUI_IO_COUNT > 32u)
+#error "RAW_GADGET_TUI_IO_COUNT must be between 1 and 32"
+#endif
 
 bool raw_gadget_tui_init(void);
 void raw_gadget_tui_deinit(void);
