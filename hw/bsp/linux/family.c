@@ -26,6 +26,7 @@
 #include "tusb.h"
 
 #if defined(TINYUSB_RAW_GADGET_TUI)
+#include "raw_gadget_log.h"
 #include "raw_gadget_tui.h"
 #endif
 

@@ -23,6 +23,7 @@
  */
 
 #include "raw_gadget_tui.h"
+#include "raw_gadget_log.h"
 
 #include <curses.h>
 #include <ctype.h>
@@ -98,6 +99,7 @@ typedef struct {
    raw_gadget_tui_page_t page;
    raw_gadget_tui_focus_t focus;
    raw_gadget_tui_text_view_t uart_output_view;
+   raw_gadget_tui_text_view_t log_view;
    uint8_t selected_button;
    char uart_input[RAW_GADGET_TUI_UART_INPUT_LENGTH];
    size_t uart_input_length;
@@ -110,6 +112,8 @@ typedef struct {
    uint32_t led_states;
    uint8_t uart_tx[RAW_GADGET_TUI_UART_TX_CAPACITY];
    size_t uart_tx_length;
+   uint8_t log[RAW_GADGET_LOG_CAPACITY];
+   size_t log_length;
 } raw_gadget_tui_snapshot_t;
 
 typedef struct {
@@ -222,6 +226,9 @@ static void raw_gadget_tui_take_snapshot(raw_gadget_tui_snapshot_t *snapshot) {
                             &snapshot->uart_tx_length);
 
    (void) pthread_mutex_unlock(&raw_gadget_tui_context.io_mutex);
+
+   snapshot->log_length =
+      raw_gadget_log_snapshot(snapshot->log, sizeof(snapshot->log));
 }
 
 static void raw_gadget_tui_button_pulse(uint8_t button) {
@@ -363,6 +370,11 @@ static void raw_gadget_tui_draw_footer(raw_gadget_tui_view_t const *view) {
                       2,
                       "F1 Help  F2 Board  F3 Log  F10 Hide  Tab Focus  "
                       "Space Pulse  T Toggle");
+   } else if (view->page == RAW_GADGET_TUI_PAGE_LOG) {
+      (void) mvprintw(row,
+                      2,
+                      "F1 Help  F2 Board  F3 Log  F10 Hide  "
+                      "Up/Down  PgUp/PgDn  Home/End");
    } else {
       (void) mvprintw(row, 2, "F1 Help   F2 Board   F3 Log   F10 Hide");
    }
@@ -390,6 +402,8 @@ static void raw_gadget_tui_draw_help(raw_gadget_tui_view_t const *view) {
    (void) mvprintw(17, 5, "Page Up/Down   Scroll one page");
    (void) mvprintw(18, 5, "Home           Oldest available output");
    (void) mvprintw(19, 5, "End            Latest output and follow mode");
+
+   (void) mvprintw(21, 3, "The same scrolling keys apply to the Log page.");
 
    raw_gadget_tui_draw_footer(view);
 }
@@ -736,13 +750,30 @@ static void raw_gadget_tui_draw_board(
    }
 }
 
-static void raw_gadget_tui_draw_log(raw_gadget_tui_windows_t *windows,
-                                    raw_gadget_tui_view_t const *view) {
+static void raw_gadget_tui_draw_log(
+   raw_gadget_tui_windows_t *windows,
+   raw_gadget_tui_view_t *view,
+   raw_gadget_tui_snapshot_t const *snapshot) {
+   char title[64];
+
    (void) erase();
    (void) box(stdscr, 0, 0);
    (void) mvprintw(0, 2, " Log ");
 
-   raw_gadget_tui_draw_frame(windows->log, "TinyUSB log", false);
+   if (view->log_view.follow) {
+      (void) snprintf(title, sizeof(title), "TinyUSB log [FOLLOW]");
+   } else {
+      (void) snprintf(title,
+                      sizeof(title),
+                      "TinyUSB log [-%zu lines]",
+                      view->log_view.scroll_lines);
+   }
+
+   raw_gadget_tui_draw_frame(windows->log, title, true);
+   raw_gadget_tui_draw_text_view(windows->log,
+                                 &view->log_view,
+                                 snapshot->log,
+                                 snapshot->log_length);
    raw_gadget_tui_draw_footer(view);
 
    (void) wnoutrefresh(stdscr);
@@ -794,7 +825,7 @@ static void raw_gadget_tui_draw(raw_gadget_tui_windows_t *windows,
          break;
 
       case RAW_GADGET_TUI_PAGE_LOG:
-         raw_gadget_tui_draw_log(windows, view);
+         raw_gadget_tui_draw_log(windows, view, snapshot);
          break;
 
       case RAW_GADGET_TUI_PAGE_BOARD:
@@ -1085,6 +1116,22 @@ static void raw_gadget_tui_handle_board_key(
    }
 }
 
+static void raw_gadget_tui_handle_log_key(
+   int key,
+   raw_gadget_tui_view_t *view,
+   raw_gadget_tui_windows_t const *windows) {
+   int rows;
+   int columns;
+
+   getmaxyx(windows->log, rows, columns);
+   (void) columns;
+
+   raw_gadget_tui_handle_uart_output_key(
+      key,
+      &view->log_view,
+      rows > 2 ? (size_t) (rows - 2) : 1u);
+}
+
 static void raw_gadget_tui_handle_key(
    int key,
    raw_gadget_tui_view_t *view,
@@ -1116,9 +1163,14 @@ static void raw_gadget_tui_handle_key(
          break;
    }
 
-   if (!view->hidden && (view->page == RAW_GADGET_TUI_PAGE_BOARD) &&
-       windows->valid) {
+   if (view->hidden || !windows->valid) {
+      return;
+   }
+
+   if (view->page == RAW_GADGET_TUI_PAGE_BOARD) {
       raw_gadget_tui_handle_board_key(key, view, windows);
+   } else if (view->page == RAW_GADGET_TUI_PAGE_LOG) {
+      raw_gadget_tui_handle_log_key(key, view, windows);
    }
 }
 
@@ -1127,6 +1179,10 @@ static void *raw_gadget_tui_thread(void *argument) {
       .page = RAW_GADGET_TUI_PAGE_BOARD,
       .focus = RAW_GADGET_TUI_FOCUS_BUTTONS,
       .uart_output_view = {
+         .scroll_lines = 0u,
+         .follow = true,
+      },
+      .log_view = {
          .scroll_lines = 0u,
          .follow = true,
       },

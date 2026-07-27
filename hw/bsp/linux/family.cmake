@@ -57,11 +57,18 @@ function(family_configure_example TARGET RTOS)
 
   if (TINYUSB_RAW_GADGET_TUI)
     target_sources(${TARGET} PRIVATE
+      ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_log.c
       ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/raw_gadget_tui.c
     )
 
     target_compile_definitions(${TARGET} PRIVATE
       TINYUSB_RAW_GADGET_TUI=1
+    )
+
+    # Route TinyUSB TU_LOG output to the TUI log ring buffer. TinyUSB's
+    # tusb_debug.h declares the configured backend after expanding this macro.
+    target_compile_definitions(${TARGET} PRIVATE
+      CFG_TUSB_DEBUG_PRINTF=raw_gadget_log_printf
     )
 
     target_include_directories(${TARGET} PRIVATE
