@@ -26,7 +26,6 @@
 #include "tusb.h"
 
 #if defined(TINYUSB_RAW_GADGET_TUI)
-#include "raw_gadget_log.h"
 #include "raw_gadget_tui.h"
 #endif
 
@@ -66,7 +65,7 @@ uint32_t board_button_read(void) {
 #endif
 }
 
-int board_uart_read(uint8_t* buf, int len) {
+int board_uart_read(uint8_t *buf, int len) {
 #if defined(TINYUSB_RAW_GADGET_TUI)
   return raw_gadget_tui_uart_read(buf, len);
 #else
@@ -77,7 +76,7 @@ int board_uart_read(uint8_t* buf, int len) {
 #endif
 }
 
-int board_uart_write(void const* buf, int len) {
+int board_uart_write(void const *buf, int len) {
 #if defined(TINYUSB_RAW_GADGET_TUI)
   return raw_gadget_tui_uart_write(buf, len);
 #else

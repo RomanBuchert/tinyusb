@@ -25,13 +25,25 @@
 #include "raw_gadget_log.h"
 
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define RAW_GADGET_LOG_STACK_BUFFER_SIZE 512u
 
+#if defined(__GNUC__) || defined(__clang__)
+#define RAW_GADGET_PRINTF_FORMAT(format_index, argument_index) \
+   __attribute__((format(gnu_printf, format_index, argument_index)))
+#else
+#define RAW_GADGET_PRINTF_FORMAT(format_index, argument_index)
+#endif
+
 int raw_gadget_log_printf(char const *format, ...)
    RAW_GADGET_PRINTF_FORMAT(1, 2);
+
+static int raw_gadget_log_vprintf(char const *format, va_list arguments)
+   RAW_GADGET_PRINTF_FORMAT(1, 0);
 
 typedef struct {
    pthread_mutex_t mutex;
@@ -45,25 +57,44 @@ static raw_gadget_log_context_t raw_gadget_log_context = {
 };
 
 static void raw_gadget_log_write_locked(uint8_t const *data, size_t length) {
-   for (size_t index = 0; index < length; ++index) {
-      size_t write_index;
+   size_t write_index;
+   size_t first_length;
+   size_t overflow;
 
-      if (raw_gadget_log_context.length < RAW_GADGET_LOG_CAPACITY) {
-         write_index =
-            (raw_gadget_log_context.start + raw_gadget_log_context.length) %
-            RAW_GADGET_LOG_CAPACITY;
-         ++raw_gadget_log_context.length;
-      } else {
-         write_index = raw_gadget_log_context.start;
-         raw_gadget_log_context.start =
-            (raw_gadget_log_context.start + 1u) % RAW_GADGET_LOG_CAPACITY;
-      }
-
-      raw_gadget_log_context.data[write_index] = data[index];
+   if (length >= RAW_GADGET_LOG_CAPACITY) {
+      memcpy(raw_gadget_log_context.data,
+             data + length - RAW_GADGET_LOG_CAPACITY,
+             RAW_GADGET_LOG_CAPACITY);
+      raw_gadget_log_context.start = 0u;
+      raw_gadget_log_context.length = RAW_GADGET_LOG_CAPACITY;
+      return;
    }
+
+   write_index =
+      (raw_gadget_log_context.start + raw_gadget_log_context.length) %
+      RAW_GADGET_LOG_CAPACITY;
+   first_length = RAW_GADGET_LOG_CAPACITY - write_index;
+   if (first_length > length) {
+      first_length = length;
+   }
+
+   memcpy(raw_gadget_log_context.data + write_index, data, first_length);
+   memcpy(raw_gadget_log_context.data,
+          data + first_length,
+          length - first_length);
+
+   overflow = 0u;
+   if (length > RAW_GADGET_LOG_CAPACITY - raw_gadget_log_context.length) {
+      overflow =
+         length - (RAW_GADGET_LOG_CAPACITY - raw_gadget_log_context.length);
+   }
+
+   raw_gadget_log_context.start =
+      (raw_gadget_log_context.start + overflow) % RAW_GADGET_LOG_CAPACITY;
+   raw_gadget_log_context.length += length - overflow;
 }
 
-int raw_gadget_log_backend_vprintf(char const *format, va_list arguments) {
+static int raw_gadget_log_vprintf(char const *format, va_list arguments) {
    char stack_buffer[RAW_GADGET_LOG_STACK_BUFFER_SIZE];
    char *buffer = stack_buffer;
    va_list copy;
@@ -114,7 +145,7 @@ int raw_gadget_log_printf(char const *format, ...) {
    int result;
 
    va_start(arguments, format);
-   result = raw_gadget_log_backend_vprintf(format, arguments);
+   result = raw_gadget_log_vprintf(format, arguments);
    va_end(arguments);
 
    return result;
@@ -122,6 +153,7 @@ int raw_gadget_log_printf(char const *format, ...) {
 
 size_t raw_gadget_log_snapshot(uint8_t *buffer, size_t capacity) {
    size_t length;
+   size_t first_length;
 
    if ((buffer == NULL) || (capacity == 0u)) {
       return 0u;
@@ -134,21 +166,19 @@ size_t raw_gadget_log_snapshot(uint8_t *buffer, size_t capacity) {
       length = capacity;
    }
 
-   for (size_t index = 0; index < length; ++index) {
-      buffer[index] =
-         raw_gadget_log_context.data[
-            (raw_gadget_log_context.start + index) %
-            RAW_GADGET_LOG_CAPACITY];
+   first_length = RAW_GADGET_LOG_CAPACITY - raw_gadget_log_context.start;
+   if (first_length > length) {
+      first_length = length;
    }
+
+   memcpy(buffer,
+          raw_gadget_log_context.data + raw_gadget_log_context.start,
+          first_length);
+   memcpy(buffer + first_length,
+          raw_gadget_log_context.data,
+          length - first_length);
 
    (void) pthread_mutex_unlock(&raw_gadget_log_context.mutex);
 
    return length;
-}
-
-void raw_gadget_log_clear(void) {
-   (void) pthread_mutex_lock(&raw_gadget_log_context.mutex);
-   raw_gadget_log_context.start = 0u;
-   raw_gadget_log_context.length = 0u;
-   (void) pthread_mutex_unlock(&raw_gadget_log_context.mutex);
 }

@@ -29,8 +29,8 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <stdatomic.h>
-#include <stdio.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +63,7 @@ typedef enum {
    RAW_GADGET_TUI_STATE_STOPPED,
    RAW_GADGET_TUI_STATE_STARTING,
    RAW_GADGET_TUI_STATE_RUNNING,
+   RAW_GADGET_TUI_STATE_STOPPING,
    RAW_GADGET_TUI_STATE_FAILED,
 } raw_gadget_tui_state_t;
 
@@ -159,60 +160,97 @@ static void raw_gadget_tui_sleep(void) {
 static void raw_gadget_tui_fifo_write(raw_gadget_tui_fifo_t *fifo,
                                       uint8_t const *data,
                                       size_t length) {
-   for (size_t index = 0; index < length; ++index) {
-      if (fifo->count == RAW_GADGET_TUI_UART_RX_CAPACITY) {
-         break;
-      }
+   size_t available = RAW_GADGET_TUI_UART_RX_CAPACITY - fifo->count;
+   size_t first_length;
 
-      fifo->data[fifo->write_index] = data[index];
-      fifo->write_index = (fifo->write_index + 1u) % RAW_GADGET_TUI_UART_RX_CAPACITY;
-      ++fifo->count;
+   if (length > available) {
+      length = available;
    }
+
+   first_length = RAW_GADGET_TUI_UART_RX_CAPACITY - fifo->write_index;
+   if (first_length > length) {
+      first_length = length;
+   }
+
+   memcpy(fifo->data + fifo->write_index, data, first_length);
+   memcpy(fifo->data, data + first_length, length - first_length);
+
+   fifo->write_index =
+      (fifo->write_index + length) % RAW_GADGET_TUI_UART_RX_CAPACITY;
+   fifo->count += length;
 }
 
 static size_t raw_gadget_tui_fifo_read(raw_gadget_tui_fifo_t *fifo,
                                        uint8_t *data,
                                        size_t length) {
-   size_t count = 0u;
+   size_t first_length;
 
-   while ((count < length) && (fifo->count > 0u)) {
-      data[count] = fifo->data[fifo->read_index];
-      fifo->read_index = (fifo->read_index + 1u) % RAW_GADGET_TUI_UART_RX_CAPACITY;
-      --fifo->count;
-      ++count;
+   if (length > fifo->count) {
+      length = fifo->count;
    }
 
-   return count;
+   first_length = RAW_GADGET_TUI_UART_RX_CAPACITY - fifo->read_index;
+   if (first_length > length) {
+      first_length = length;
+   }
+
+   memcpy(data, fifo->data + fifo->read_index, first_length);
+   memcpy(data + first_length, fifo->data, length - first_length);
+
+   fifo->read_index =
+      (fifo->read_index + length) % RAW_GADGET_TUI_UART_RX_CAPACITY;
+   fifo->count -= length;
+
+   return length;
 }
 
 static void raw_gadget_tui_ring_write(raw_gadget_tui_ring_t *ring,
                                       uint8_t const *data,
                                       size_t length) {
-   for (size_t index = 0; index < length; ++index) {
-      size_t write_index;
+   size_t write_index;
+   size_t first_length;
+   size_t overflow;
 
-      if (ring->length < RAW_GADGET_TUI_UART_TX_CAPACITY) {
-         write_index =
-            (ring->start + ring->length) % RAW_GADGET_TUI_UART_TX_CAPACITY;
-         ++ring->length;
-      } else {
-         write_index = ring->start;
-         ring->start = (ring->start + 1u) % RAW_GADGET_TUI_UART_TX_CAPACITY;
-      }
-
-      ring->data[write_index] = data[index];
+   if (length >= RAW_GADGET_TUI_UART_TX_CAPACITY) {
+      memcpy(ring->data,
+             data + length - RAW_GADGET_TUI_UART_TX_CAPACITY,
+             RAW_GADGET_TUI_UART_TX_CAPACITY);
+      ring->start = 0u;
+      ring->length = RAW_GADGET_TUI_UART_TX_CAPACITY;
+      return;
    }
+
+   write_index =
+      (ring->start + ring->length) % RAW_GADGET_TUI_UART_TX_CAPACITY;
+   first_length = RAW_GADGET_TUI_UART_TX_CAPACITY - write_index;
+   if (first_length > length) {
+      first_length = length;
+   }
+
+   memcpy(ring->data + write_index, data, first_length);
+   memcpy(ring->data, data + first_length, length - first_length);
+
+   overflow = 0u;
+   if (length > RAW_GADGET_TUI_UART_TX_CAPACITY - ring->length) {
+      overflow = length - (RAW_GADGET_TUI_UART_TX_CAPACITY - ring->length);
+   }
+
+   ring->start = (ring->start + overflow) % RAW_GADGET_TUI_UART_TX_CAPACITY;
+   ring->length += length - overflow;
 }
 
 static void raw_gadget_tui_ring_copy(raw_gadget_tui_ring_t const *ring,
                                      uint8_t *data,
                                      size_t *length) {
-   *length = ring->length;
+   size_t first_length = RAW_GADGET_TUI_UART_TX_CAPACITY - ring->start;
 
-   for (size_t index = 0; index < ring->length; ++index) {
-      data[index] =
-         ring->data[(ring->start + index) % RAW_GADGET_TUI_UART_TX_CAPACITY];
+   if (first_length > ring->length) {
+      first_length = ring->length;
    }
+
+   memcpy(data, ring->data + ring->start, first_length);
+   memcpy(data + first_length, ring->data, ring->length - first_length);
+   *length = ring->length;
 }
 
 static void raw_gadget_tui_take_snapshot(raw_gadget_tui_snapshot_t *snapshot) {
@@ -1265,7 +1303,9 @@ bool raw_gadget_tui_init(void) {
       return true;
    }
 
-   if (raw_gadget_tui_context.thread_created) {
+   if ((raw_gadget_tui_context.state == RAW_GADGET_TUI_STATE_STARTING) ||
+       (raw_gadget_tui_context.state == RAW_GADGET_TUI_STATE_STOPPING) ||
+       raw_gadget_tui_context.thread_created) {
       (void) pthread_mutex_unlock(&raw_gadget_tui_context.lifecycle_mutex);
       return false;
    }
@@ -1318,24 +1358,32 @@ void raw_gadget_tui_deinit(void) {
 
    (void) pthread_mutex_lock(&raw_gadget_tui_context.lifecycle_mutex);
 
+   if (raw_gadget_tui_context.state == RAW_GADGET_TUI_STATE_STOPPING) {
+      (void) pthread_mutex_unlock(&raw_gadget_tui_context.lifecycle_mutex);
+      return;
+   }
+
    if (raw_gadget_tui_context.thread_created) {
+      raw_gadget_tui_context.state = RAW_GADGET_TUI_STATE_STOPPING;
+      raw_gadget_tui_context.thread_created = false;
       atomic_store_explicit(&raw_gadget_tui_context.run_requested,
                             false,
                             memory_order_release);
       thread = raw_gadget_tui_context.thread;
       join_required = true;
+   } else {
+      raw_gadget_tui_context.state = RAW_GADGET_TUI_STATE_STOPPED;
    }
 
    (void) pthread_mutex_unlock(&raw_gadget_tui_context.lifecycle_mutex);
 
    if (join_required) {
       (void) pthread_join(thread, NULL);
-   }
 
-   (void) pthread_mutex_lock(&raw_gadget_tui_context.lifecycle_mutex);
-   raw_gadget_tui_context.thread_created = false;
-   raw_gadget_tui_context.state = RAW_GADGET_TUI_STATE_STOPPED;
-   (void) pthread_mutex_unlock(&raw_gadget_tui_context.lifecycle_mutex);
+      (void) pthread_mutex_lock(&raw_gadget_tui_context.lifecycle_mutex);
+      raw_gadget_tui_context.state = RAW_GADGET_TUI_STATE_STOPPED;
+      (void) pthread_mutex_unlock(&raw_gadget_tui_context.lifecycle_mutex);
+   }
 }
 
 uint32_t raw_gadget_tui_button_read(void) {

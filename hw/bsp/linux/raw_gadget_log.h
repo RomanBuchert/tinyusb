@@ -24,7 +24,6 @@
 
 #pragma once
 
-#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -34,18 +33,7 @@ extern "C" {
 
 #define RAW_GADGET_LOG_CAPACITY 65536u
 
-#if defined(__GNUC__) || defined(__clang__)
-#define RAW_GADGET_PRINTF_FORMAT(format_index, argument_index) \
-   __attribute__((format(gnu_printf, format_index, argument_index)))
-#else
-#define RAW_GADGET_PRINTF_FORMAT(format_index, argument_index)
-#endif
-
-int raw_gadget_log_backend_vprintf(char const *format, va_list arguments)
-   RAW_GADGET_PRINTF_FORMAT(1, 0);
-
 size_t raw_gadget_log_snapshot(uint8_t *buffer, size_t capacity);
-void raw_gadget_log_clear(void);
 
 #ifdef __cplusplus
 }
