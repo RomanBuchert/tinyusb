@@ -66,13 +66,20 @@ uint32_t board_button_read(void) {
 }
 
 int board_uart_read(uint8_t* buf, int len) {
+#if defined(TINYUSB_RAW_GADGET_TUI)
+  return raw_gadget_tui_uart_read(buf, len);
+#else
   (void) buf;
   (void) len;
 
   return -1;
+#endif
 }
 
 int board_uart_write(void const* buf, int len) {
+#if defined(TINYUSB_RAW_GADGET_TUI)
+  return raw_gadget_tui_uart_write(buf, len);
+#else
   if ((buf == NULL) || (len <= 0)) {
     return -1;
   }
@@ -81,6 +88,7 @@ int board_uart_write(void const* buf, int len) {
   fflush(stdout);
 
   return (int) written;
+#endif
 }
 
 uint32_t tusb_time_millis_api(void) {

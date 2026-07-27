@@ -42,6 +42,9 @@ void raw_gadget_tui_led_write(uint8_t index, bool state);
 void raw_gadget_tui_led_write_all(uint32_t states);
 uint32_t raw_gadget_tui_led_read_all(void);
 
+int raw_gadget_tui_uart_read(uint8_t *buffer, int length);
+int raw_gadget_tui_uart_write(void const *buffer, int length);
+
 #ifdef __cplusplus
 }
 #endif
